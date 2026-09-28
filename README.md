@@ -22,7 +22,7 @@ names, `yoisho_role` and roles, or `{"guest": true}`.
 Run these as `yoisho_lms_usr` in the bench directory, `/home/yoisho_lms_usr/yoisho_lms/lms-bench`:
 
 ```bash
-bench get-app <git url or local path to this repo>
+bench get-app https://github.com/AshwiniUpadhy/yoisho_sso.git --branch main
 bench --site lms_site.com install-app yoisho_sso
 bench --site lms_site.com migrate
 ```
