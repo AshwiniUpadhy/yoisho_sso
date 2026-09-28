@@ -1,0 +1,2 @@
+# Patches for yoisho_sso. One entry per line, applied on `bench migrate`.
+# (none)
