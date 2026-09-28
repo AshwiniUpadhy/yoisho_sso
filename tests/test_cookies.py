@@ -57,6 +57,14 @@ def test_session_is_widened_and_host_only_copy_retired():
     assert "HttpOnly" in wide and "Secure" in wide and "SameSite=Lax" in wide
 
 
+def test_shared_session_is_secure_even_when_frappe_saw_http():
+    r = Response()
+    emit_cookies(r, {"sid": {**SESSION, "secure": False}}, [], shared_domain=".theradixlab.com",
+                 host="yoisho-lms.theradixlab.com")
+    wide = [h for h in set_cookies(r) if "Domain=" in h]
+    assert len(wide) == 1 and "Secure" in wide[0]
+
+
 def test_other_cookies_stay_host_only():
     r = Response()
     emit_cookies(r, {"user_id": {"value": "a@b.c"}, "system_user": {"value": "no"}}, [],

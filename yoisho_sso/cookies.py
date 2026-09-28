@@ -89,6 +89,11 @@ def emit_cookies(response, cookies, to_delete, shared_domain=None, host=None):
         response.set_cookie(key, "", expires=_expired())
         if value == GUEST:
             continue
+        # Always Secure when shared. Frappe derives `secure` from the scheme it
+        # sees, and behind a proxy that does not send X-Forwarded-Proto (staging,
+        # yoisho-lms.theradixlab.com) that is plain http — which would put a
+        # session every sub-domain receives on the wire unencrypted.
+        common["secure"] = True
         response.set_cookie(key, quote(value.encode("utf-8")), domain=wide, **common)
 
     for key in set(to_delete):
