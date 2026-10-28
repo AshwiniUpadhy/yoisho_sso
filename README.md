@@ -84,6 +84,18 @@ bench --site lms_site.com set-config -p sso_login_code 1              # on
 bench --site lms_site.com set-config -p sso_login_code_allow_staff 1  # optional: staff too
 ```
 
+**The email is editable** in the desk: Email Template "Yoisho Sign-in Code".
+Create it once, filled with the built-in wording:
+
+```bash
+bench --site lms_site.com execute yoisho_sso.login_code.create_default_template
+```
+
+Placeholders: `{{ code }}`, `{{ first_name }}` (blank if none), `{{ minutes }}`.
+Edits apply at once. If the template is missing, fails to render, or no longer
+shows `{{ code }}`, the built-in email is sent instead, and an Error Log entry
+says why.
+
 sso.yoisho.in shows the option only with `LOGIN_CODE=1` in its environment.
 To switch it off, set `sso_login_code 0`.
 

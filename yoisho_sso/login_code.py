@@ -42,6 +42,21 @@ STAFF_YOISHO_ROLES = {"admin", "superadmin", "teacher", "sales"}
 # Frappe roles that mean staff whatever yoisho_role says.
 STAFF_FRAPPE_ROLES = {"Administrator", "System Manager"}
 
+# The email's wording lives in the desk, in the Email Template of this name, so
+# it can be changed without a deploy. Placeholders: {{ code }}, {{ first_name }}
+# (blank when the account has none), {{ minutes }}. Without the template, or if
+# it fails to render or drops {{ code }}, the built-in copy below is sent:
+# nobody may ever get a sign-in email without its code.
+TEMPLATE_NAME = "Yoisho Sign-in Code"
+DEFAULT_SUBJECT = "{{ code }} is your Yoisho sign-in code"
+DEFAULT_BODY = (
+	"<p>Hi{% if first_name %} {{ first_name }}{% endif %},</p>"
+	"<p>Your code to sign in to Yoisho is:</p>"
+	'<p style="font-size:28px;font-weight:700;letter-spacing:6px">{{ code }}</p>'
+	"<p>It works once, for the next {{ minutes }} minutes.</p>"
+	"<p>If you did not ask for it, ignore this email: nobody can sign in without the code.</p>"
+)
+
 SENT = {"sent": True}
 WRONG = "That code is not right, or it has expired. Ask for a new one."
 
@@ -84,6 +99,11 @@ def send_allowed(sends, now):
 	if len(recent) >= MAX_SENDS_PER_HOUR:
 		return False, recent
 	return True, recent
+
+
+def usable_email(subject, message, code):
+	"""An edited template is used only if it rendered and still shows the code."""
+	return bool(subject and str(subject).strip()) and code in str(message or "")
 
 
 def check_code(record, expected_hash, now):
@@ -130,20 +150,52 @@ def _login_as(name):
 	return frappe.db.get_value("User", name, "full_name") or ""
 
 
+def _render(subject, body, args):
+	return frappe.render_template(subject, args).strip(), frappe.render_template(body, args)
+
+
+def _email_for(code, first_name):
+	"""(subject, message): the desk's Email Template when it is usable, else the built-in copy."""
+	args = {
+		"code": code,
+		# Escaped here: render_template does not escape, and a name is typed by its owner.
+		"first_name": frappe.utils.escape_html(first_name or ""),
+		"minutes": CODE_TTL_SEC // 60,
+	}
+	try:
+		if frappe.db.exists("Email Template", TEMPLATE_NAME):
+			tpl = frappe.get_doc("Email Template", TEMPLATE_NAME)
+			subject, message = _render(tpl.subject or "", tpl.response_ or "", args)
+			if usable_email(subject, message, code):
+				return subject, message
+			frappe.log_error(title="yoisho_sso: sign-in code template unusable (no {{ code }}?); sent the built-in email")
+	except Exception:
+		frappe.log_error(title="yoisho_sso: sign-in code template failed to render; sent the built-in email")
+	return _render(DEFAULT_SUBJECT, DEFAULT_BODY, args)
+
+
 def _send_email(email, code, first_name):
-	greeting = f"Hi {frappe.utils.escape_html(first_name)}," if first_name else "Hi,"
-	frappe.sendmail(
-		recipients=[email],
-		subject=f"{code} is your Yoisho sign-in code",
-		message=(
-			f"<p>{greeting}</p>"
-			f"<p>Your code to sign in to Yoisho is:</p>"
-			f"<p style=\"font-size:28px;font-weight:700;letter-spacing:6px\">{code}</p>"
-			f"<p>It works once, for the next {CODE_TTL_SEC // 60} minutes.</p>"
-			"<p>If you did not ask for it, ignore this email: nobody can sign in without the code.</p>"
-		),
-		now=True,
-	)
+	subject, message = _email_for(code, first_name)
+	frappe.sendmail(recipients=[email], subject=subject, message=message, now=True)
+
+
+def create_default_template():
+	"""Create the editable Email Template with the built-in wording (once).
+
+	    bench --site <site> execute yoisho_sso.login_code.create_default_template
+	"""
+	if frappe.db.exists("Email Template", TEMPLATE_NAME):
+		print(f"Email Template '{TEMPLATE_NAME}' already exists: edit it in the desk.")
+		return
+	frappe.get_doc({
+		"doctype": "Email Template",
+		"name": TEMPLATE_NAME,
+		"subject": DEFAULT_SUBJECT,
+		"use_html": 0,
+		"response": DEFAULT_BODY,
+	}).insert(ignore_permissions=True)
+	frappe.db.commit()
+	print(f"Created Email Template '{TEMPLATE_NAME}'. Edit it at /app/email-template.")
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

@@ -166,3 +166,49 @@ def test_off_unless_switched_on(site):
         lc.send_login_code("asha@example.com")
     with pytest.raises(frappe.PermissionError):
         lc.login_with_code("asha@example.com", "123456")
+
+
+# ── The editable email ─────────────────────────────────────────────────────
+
+def test_an_edited_email_is_used_only_while_it_shows_the_code():
+    assert lc.usable_email("Your code", "<p>Use 123456</p>", "123456")
+    assert not lc.usable_email("Your code", "<p>Welcome back!</p>", "123456")
+    assert not lc.usable_email("  ", "<p>123456</p>", "123456")
+
+
+def test_the_built_in_wording_fills_every_placeholder():
+    import jinja2
+    env = jinja2.Environment()
+    args = {"code": "482913", "first_name": "Asha", "minutes": 10}
+    subject = env.from_string(lc.DEFAULT_SUBJECT).render(args)
+    body = env.from_string(lc.DEFAULT_BODY).render(args)
+    assert subject == "482913 is your Yoisho sign-in code"
+    assert "Hi Asha," in body and "482913" in body and "10 minutes" in body
+    assert "Hi," in env.from_string(lc.DEFAULT_BODY).render({**args, "first_name": ""})
+
+
+def _jinja_render(subject, body, args):
+    import jinja2
+    env = jinja2.Environment()
+    return env.from_string(subject).render(args).strip(), env.from_string(body).render(args)
+
+
+@pytest.mark.parametrize("template, expect_custom", [
+    ({"subject": "Code: {{ code }}", "response_": "<p>{{ first_name }}, use {{ code }}</p>"}, True),
+    ({"subject": "Hello", "response_": "<p>Welcome back!</p>"}, False),  # {{ code }} deleted
+    (None, False),  # no template
+])
+def test_the_desk_template_or_the_built_in_email(monkeypatch, template, expect_custom):
+    logged = []
+    monkeypatch.setattr(lc, "_render", _jinja_render)
+    monkeypatch.setattr(frappe, "db", types.SimpleNamespace(exists=lambda *a: template is not None), raising=False)
+    monkeypatch.setattr(frappe, "get_doc", lambda *a: types.SimpleNamespace(**template))
+    monkeypatch.setattr(frappe, "log_error", lambda **k: logged.append(k))
+    subject, message = lc._email_for("482913", "<b>Asha</b>")
+    assert "482913" in message
+    if expect_custom:
+        assert subject == "Code: 482913"
+        assert "&lt;b&gt;Asha&lt;/b&gt;" in message  # a name is escaped
+    else:
+        assert subject == "482913 is your Yoisho sign-in code"
+    assert bool(logged) == (template is not None and not expect_custom)
