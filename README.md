@@ -62,6 +62,31 @@ Do **not** run `bench setup production` on this box. It installs nginx, which co
 Remove `shared_cookie_domain` with `bench --site lms_site.com set-config shared_cookie_domain ''`, then
 restart as above. Frappe goes back to host-only cookies. The app can stay installed.
 
+## Sign in with an emailed code (`yoisho_sso.login_code`)
+
+sso.yoisho.in can offer a 6-digit code by email instead of a password. Two
+guest methods, both refused until switched on:
+
+- `yoisho_sso.login_code.send_login_code(email)`: always answers the same,
+  whether or not the address has an account.
+- `yoisho_sso.login_code.login_with_code(email, code)`: on a match it starts
+  the session (`login_manager.login_as`), and its `sid` is shared across
+  *.yoisho.in like any other.
+
+Each code is valid for 10 minutes and works once. Only an HMAC of it is
+stored, in Redis. Five wrong tries and the code is dead. Each address gets at
+most one code a minute and five an hour. Staff accounts (yoisho_role
+Admin/SuperAdmin/Teacher/Sales, or System Manager) are left out unless allowed.
+The mail goes through the site's default outgoing Email Account.
+
+```bash
+bench --site lms_site.com set-config -p sso_login_code 1              # on
+bench --site lms_site.com set-config -p sso_login_code_allow_staff 1  # optional: staff too
+```
+
+sso.yoisho.in shows the option only with `LOGIN_CODE=1` in its environment.
+To switch it off, set `sso_login_code 0`.
+
 ## Tests
 
 The cookie rules and the redirect builder are pure functions, so they run without a bench:
@@ -70,3 +95,6 @@ The cookie rules and the redirect builder are pure functions, so they run withou
 pip install werkzeug==3.1.6 pytest
 python -m pytest tests
 ```
+
+`tests/test_login_code.py` imports frappe, so run it with the bench's Python
+(`env/bin/python -m pytest tests`) after `pip install pytest` there.
